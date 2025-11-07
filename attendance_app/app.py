@@ -266,30 +266,85 @@ def main():
             st.subheader("Live browser scanner (recommended)")
             st.write("If your browser prompts for camera permission, allow it. The scanner will auto-detect QR codes and send the decoded text back to the app.")
 
-            # html5-qrcode live scanner embedded via streamlit components
-            html = f"""
-            <div id="reader" style="width:100%"></div>
-            <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
-            <script>
-            const sendValue = (v) => {{
-                const data = {{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: v}};
-                window.parent.postMessage(data, '*');
-            }};
+                        # html5-qrcode live scanner embedded via streamlit components
+                        html = """
+<div>
+    <div id="reader" style="width:100%"></div>
+    <div style="margin-top:8px">
+        <button id="startBtn">Start scanner</button>
+        <button id="stopBtn" disabled>Stop scanner</button>
+        <span id="status" style="margin-left:12px;color:#666">Idle</span>
+    </div>
+    <div style="margin-top:8px">Last decoded: <span id="lastDecoded"></span></div>
+</div>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+<script>
+(function() {
+    const readerId = 'reader';
+    const lastDecoded = document.getElementById('lastDecoded');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
 
-            function onScanSuccess(decodedText, decodedResult) {{
-                // send decoded text back to Streamlit app
-                sendValue(decodedText);
-            }}
+    // helper to send value back to Streamlit
+    function sendValue(v) {
+        const data = {isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: v};
+        window.parent.postMessage(data, '*');
+    }
 
-            function onScanFailure(error) {{
-                // ignore for now
-            }}
+    let html5QrCode = null;
 
-            const config = {{ fps: 10, qrbox: 250 }};
-            const html5QrcodeScanner = new Html5QrcodeScanner('reader', config, /* verbose= */ false);
-            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-            </script>
-            """
+    function onScanSuccess(decodedText, decodedResult) {
+        // show it locally
+        lastDecoded.textContent = decodedText;
+        statusEl.textContent = 'Decoded';
+        // send to Streamlit
+        try { sendValue(decodedText); } catch (e) { console.error(e); }
+    }
+
+    function onScanFailure(error) {
+        // set status to scanning
+        statusEl.textContent = 'Scanning...';
+    }
+
+    startBtn.addEventListener('click', function() {
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusEl.textContent = 'Requesting camera...';
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode(readerId);
+        }
+        const config = { fps: 10, qrbox: 250 };
+        html5QrCode.start(
+            { facingMode: "environment" },
+            config,
+            onScanSuccess,
+            onScanFailure
+        ).then(() => {
+            statusEl.textContent = 'Scanning...';
+        }).catch(err => {
+            statusEl.textContent = 'Camera permission or start failed';
+            console.error(err);
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        });
+    });
+
+    stopBtn.addEventListener('click', function() {
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                statusEl.textContent = 'Stopped';
+            }).catch(e => {
+                console.error(e);
+                statusEl.textContent = 'Stop failed';
+            });
+        }
+    });
+})();
+</script>
+"""
 
             # components.html will return the decoded text when the embedded JS calls postMessage with the correct payload
             result = components.html(html, height=450)
