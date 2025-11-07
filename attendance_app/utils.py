@@ -6,20 +6,9 @@ import qrcode
 from PIL import Image
 import numpy as np
 
-try:
-    import cv2
-except Exception:
-    cv2 = None
+# NOTE: import heavy/OS-bound image libraries lazily inside functions to avoid import-time failures
+# (some hosting environments may not have compatible opencv/segno binary wheels for the Python runtime).
 
-try:
-    from pyzbar.pyzbar import decode as pyzbar_decode
-except Exception:
-    pyzbar_decode = None
-
-try:
-    import segno
-except Exception:
-    segno = None
 
 
 def make_payload(row: dict) -> str:
@@ -43,7 +32,12 @@ def generate_qr_image(payload: str, box_size: int = 6) -> Image.Image:
     Tries to generate an Aztec code (using segno) and falls back to a QR code when segno
     isn't available.
     """
-    # prefer Aztec codes when available
+    # prefer Aztec codes when available; import segno lazily
+    try:
+        import segno
+    except Exception:
+        segno = None
+
     if segno is not None:
         try:
             # segno can generate aztec codes
@@ -69,7 +63,12 @@ def decode_qr_from_bytes(image_bytes: bytes) -> Optional[str]:
     """Decode a QR code from image bytes. Returns payload string or None.
     Tries OpenCV's QRCodeDetector first (no zbar dependency). Falls back to pyzbar if available.
     """
-    # Try OpenCV QRCodeDetector
+    # Try OpenCV QRCodeDetector (import lazily)
+    try:
+        import cv2
+    except Exception:
+        cv2 = None
+
     if cv2 is not None:
         try:
             arr = np.frombuffer(image_bytes, np.uint8)
@@ -81,7 +80,12 @@ def decode_qr_from_bytes(image_bytes: bytes) -> Optional[str]:
         except Exception:
             pass
 
-    # Fallback to pyzbar if available
+    # Fallback to pyzbar if available (import lazily)
+    try:
+        from pyzbar.pyzbar import decode as pyzbar_decode
+    except Exception:
+        pyzbar_decode = None
+
     if pyzbar_decode is not None:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         decoded = pyzbar_decode(img)
@@ -93,4 +97,5 @@ def decode_qr_from_bytes(image_bytes: bytes) -> Optional[str]:
         except Exception:
             return data.decode("latin-1")
 
-    raise RuntimeError("No QR decoder available. Install opencv-python or pyzbar + zbar.")
+    # No decoder available; return None to let caller handle gracefully
+    return None
