@@ -266,8 +266,8 @@ def main():
             st.subheader("Live browser scanner (recommended)")
             st.write("If your browser prompts for camera permission, allow it. The scanner will auto-detect QR codes and send the decoded text back to the app.")
 
-                        # html5-qrcode live scanner embedded via streamlit components
-                        html = """
+            # html5-qrcode live scanner embedded via streamlit components
+            html = """
 <div>
     <div id="reader" style="width:100%"></div>
     <div style="margin-top:8px">
