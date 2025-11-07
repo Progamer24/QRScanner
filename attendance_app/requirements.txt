@@ -1,0 +1,10 @@
+streamlit>=1.0
+pandas>=1.4
+openpyxl
+qrcode[pil]
+Pillow
+pyzbar
+opencv-python
+# Optional (for webcam scanning):
+# streamlit-webrtc
+segno
