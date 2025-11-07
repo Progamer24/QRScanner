@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from utils import generate_qr_image, make_payload, decode_qr_from_bytes
 import pathlib
@@ -143,9 +144,23 @@ def main():
                 display_cols.append(c)
 
             st.write("Edit attendance by toggling the checkboxes below; timestamps are used internally.")
-            # render rows with checkboxes
+
+            # search/filter box to quickly find a participant by Name or Team
+            search = st.text_input("Search by name or team (case-insensitive)")
+            if search:
+                mask = pd.Series([False] * len(df))
+                if 'Name' in df.columns:
+                    mask = mask | df['Name'].astype(str).str.contains(search, case=False, na=False)
+                if 'Team Name' in df.columns:
+                    mask = mask | df['Team Name'].astype(str).str.contains(search, case=False, na=False)
+                filtered = df[mask]
+                st.write(f"Showing {len(filtered)} matching rows")
+            else:
+                filtered = df
+
+            # render rows with checkboxes for the filtered view
             changed = False
-            for idx, row in df.iterrows():
+            for idx, row in filtered.iterrows():
                 cols = st.columns([3, 4, 1, 1, 1, 1])
                 with cols[0]:
                     st.write(str(row.get('Team Name', '')))
@@ -233,32 +248,81 @@ def main():
 
         elif mode == "Scanner":
             st.header("Scanner")
-            st.write("Open this page on your phone and use the camera input, or upload a QR image (PNG/JPG) below.")
+            st.write("Open this page on your phone and allow camera access — the app will continuously scan and mark QR codes (no photo button required).")
             columns_to_mark = st.multiselect("Columns to mark when scanning", options=list(df.columns), default=DEFAULT_COLUMNS)
 
-            cam_img = st.camera_input("Scan with phone camera")
-            uploaded_img = st.file_uploader("Or upload QR image", type=["png", "jpg", "jpeg"]) 
+            st.markdown("---")
+            st.subheader("Live browser scanner (recommended)")
+            st.write("If your browser prompts for camera permission, allow it. The scanner will auto-detect QR codes and send the decoded text back to the app.")
 
-            data = None
-            if cam_img is not None:
-                data = cam_img.read()
+            # html5-qrcode live scanner embedded via streamlit components
+            html = f"""
+            <div id="reader" style="width:100%"></div>
+            <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+            <script>
+            const sendValue = (v) => {{
+                const data = {{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: v}};
+                window.parent.postMessage(data, '*');
+            }};
+
+            function onScanSuccess(decodedText, decodedResult) {{
+                // send decoded text back to Streamlit app
+                sendValue(decodedText);
+            }}
+
+            function onScanFailure(error) {{
+                // ignore for now
+            }}
+
+            const config = {{ fps: 10, qrbox: 250 }};
+            const html5QrcodeScanner = new Html5QrcodeScanner('reader', config, /* verbose= */ false);
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+            </script>
+            """
+
+            # components.html will return the decoded text when the embedded JS calls postMessage with the correct payload
+            result = components.html(html, height=450)
+
+            # fallback upload if browser scanning not available
+            uploaded_img = st.file_uploader("Or upload QR image (fallback)", type=["png", "jpg", "jpeg"]) 
+
+            # if the browser component returned a value, it will be available in result
+            data_bytes = None
+            decoded_payload_text = None
+            if result:
+                decoded_payload_text = result
             elif uploaded_img is not None:
-                data = uploaded_img.read()
+                data_bytes = uploaded_img.read()
 
-            if data is not None:
+            if decoded_payload_text:
                 try:
-                    payload = decode_qr_from_bytes(data)
+                    st.success("QR decoded (live)")
+                    st.write(decoded_payload_text)
+                    # payload expected to be JSON string
+                    payload_obj = json.loads(decoded_payload_text)
+                    identifier = payload_obj.get("id") or payload_obj.get("name")
+                    ok, msg = mark_attendance(df, identifier, columns_to_mark, source_path=source_path)
+                    if ok:
+                        st.success(f"Marked attendance for {identifier}")
+                        matches = df[(df.get('Srn', '').astype(str) == str(identifier)) | (df.get('Email', '').astype(str) == str(identifier)) | (df.get('Name', '').astype(str) == str(identifier))]
+                        st.dataframe(matches)
+                    else:
+                        st.error(msg)
+                except Exception as e:
+                    st.error(f"Failed to decode or mark QR: {e}")
+            elif data_bytes is not None:
+                try:
+                    payload = decode_qr_from_bytes(data_bytes)
                     if not payload:
                         st.error("No QR decoded from image.")
                     else:
                         st.success("QR decoded")
                         st.json(json.loads(payload))
                         payload_obj = json.loads(payload)
-                        identifier = payload_obj.get("id")
+                        identifier = payload_obj.get("id") or payload_obj.get("name")
                         ok, msg = mark_attendance(df, identifier, columns_to_mark, source_path=source_path)
                         if ok:
                             st.success(f"Marked attendance for {identifier}")
-                            # show matching rows
                             matches = df[(df.get('Srn', '').astype(str) == str(identifier)) | (df.get('Email', '').astype(str) == str(identifier)) | (df.get('Name', '').astype(str) == str(identifier))]
                             st.dataframe(matches)
                         else:
