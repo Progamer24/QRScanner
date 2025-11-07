@@ -3,6 +3,5 @@ pandas
 numpy
 Pillow
 segno
-opencv-python-headless
 openpyxl
 # optional: pyzbar  # requires system zbar; Streamlit Cloud may not provide this

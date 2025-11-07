@@ -7,7 +7,18 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from utils import generate_qr_image, make_payload, decode_qr_from_bytes
+# Import utils lazily and handle import errors gracefully (some hosts may fail importing cv2 at import time)
+try:
+    from utils import generate_qr_image, make_payload, decode_qr_from_bytes
+    UTILS_AVAILABLE = True
+    IMPORT_ERROR_MSG = ""
+except Exception as e:
+    # Keep the app running; server-side decoding will be unavailable
+    generate_qr_image = None
+    make_payload = None
+    decode_qr_from_bytes = None
+    UTILS_AVAILABLE = False
+    IMPORT_ERROR_MSG = str(e)
 import pathlib
 import re
 import zipfile
